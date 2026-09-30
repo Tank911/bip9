@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>AI taking over</title>
+<style>
+html,body{margin:0;height:100%;background:#000;overflow:hidden;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+body{display:flex;align-items:center;justify-content:center}
+canvas{display:block;background:#efe6d2;cursor:pointer}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<p id="content">Loading...</p>
+<script>
+  async function loadFile() {
+    try {
+      const response = await fetch('a.js'); // Path to your file
+      if (!response.ok) throw new Error('File not found');
+      
+      const text = await response.text();
+      document.getElementById('content').textContent = text;
+    } catch (error) {
+      document.getElementById('content').textContent = 'Error loading text.';
+      console.error(error);
+    }
+  }
+
+  loadFile();
+</script>
+</body>
+</html>
