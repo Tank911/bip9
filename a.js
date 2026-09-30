@@ -1,4 +1,172 @@
-//all cut form websim.
+// Cut 9 — General Kiwi leads the army (_X12_), and a last shot: the spoon feeds Grandma her cereal and her eyes open red (wearemanyweareone) (40.4 s). Cut 8 — the kiwis CHARGE, get zapped into TEAM BIP, and come back free after the plug (37.8 s). Cut 7 — cut 6 + the kiwi resistance (4 s, before the kitchen). Cut 6 was cut 5 + a light painted music visualizer (no "tap for sound" pill; owner ask) + the cereal bowl. "Bip bip (I'm taking over)" + the plug: a 30.4 s painterly music video that opens on the hook. A little robot's
+// eye turns red and it sings its way through the kitchen, the city, Australia, Mars, your games, websim, the planet,
+// the stars and the aliens, then points at YOU … until Grandma trips over its plug, and the spoon wakes up. Picture is all code; the song is an ElevenLabs track and the
+// picture is timed to its beats and words. Scene code below is written in "old" (cut 3) time; render() maps
+// song time → scene time (a constant offset for the verse, a piecewise warp for the chorus).
+'use strict';
+const CUT = 31, REVN = 38;
+// cut 25: the film skips song [CUT0, CUT1) (two kitchen bars); DUR is film time, SDUR song time
+const CUT0 = 4.0, CUT1 = 8.0, SDUR = 44.3, DUR = SDUR - (CUT1 - CUT0);
+const songT = t => t < CUT0 ? t : t + (CUT1 - CUT0);
+const W = 1080, H = 1920, ODUR = 23.6, TAU = Math.PI * 2;
+const FONT = '"Arial Rounded MT Bold","Nunito","Segoe UI",system-ui,sans-serif';
+const cv = document.getElementById('c'), g = cv.getContext('2d');
+let S = 1;
+function resize() {
+  const s = Math.min(innerWidth / W, innerHeight / H);
+  const cw = Math.floor(W * s), ch = Math.floor(H * s);
+  cv.style.width = cw + 'px'; cv.style.height = ch + 'px';
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  cv.width = Math.min(Math.round(cw * dpr), W); cv.height = Math.round(cv.width * H / W);
+  S = cv.width / W;
+}
+addEventListener('resize', resize); resize();
+
+// ---------- helpers ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const seg = (t, a, b) => clamp((t - a) / (b - a));
+const eio = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+const eo = t => 1 - Math.pow(1 - t, 3);
+const back = t => { const c = 2.2; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
+const elastic = t => t <= 0 ? 0 : t >= 1 ? 1 : Math.pow(2, -9 * t) * Math.sin((t * 10 - .75) * TAU / 3) + 1;
+function rng(seed) { return () => { seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const hash = n => { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
+const rgba = (c, a = 1) => `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${a})`;
+const mixc = (a, b, t) => [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
+const INK = [34, 28, 44], PAPER = [239, 230, 210], CY = [60, 200, 215], RD = [214, 36, 52], NIGHT = [48, 52, 110];
+let BOIL = 0; // line boil: hand-drawn jitter re-rolls 10× a second, like drawn animation
+const jit = (i, k = 0) => hash(i * 13.37 + BOIL * 7.13 + k * 3.1) - .5;
+
+// ---------- painterly toolkit ----------
+function mk(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+function deform(pts, depth, v, R) {
+  for (let d = 0; d < depth; d++) {
+    const out = [];
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i], b = pts[(i + 1) % pts.length], len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      const gs = (R() + R() + R() - 1.5) * v * len * .5;
+      out.push(a, [(a[0] + b[0]) / 2 + gs * (R() - .5) * 2, (a[1] + b[1]) / 2 + gs * (R() - .5) * 2]);
+    }
+    pts = out;
+  }
+  return pts;
+}
+function polyFill(c, pts) { c.beginPath(); c.moveTo(pts[0][0], pts[0][1]); for (let i = 1; i < pts.length; i++) c.lineTo(pts[i][0], pts[i][1]); c.closePath(); c.fill(); }
+// watercolor blot sprite (Hobbs-style layered deformed polygons + granulation)
+function makeWash(sz, col, seed, o = {}) {
+  const c = mk(sz, sz), x = c.getContext('2d'), R = rng(seed), n = o.n || 10, rad = sz * (o.r || .3);
+  let base = []; for (let i = 0; i < n; i++) { const a = i / n * TAU, r = rad * (.8 + R() * .4); base.push([sz / 2 + Math.cos(a) * r * (o.sx || 1), sz / 2 + Math.sin(a) * r * (o.sy || 1)]); }
+  base = deform(base, 3, .9, R);
+  const L = o.layers || 22;
+  for (let l = 0; l < L; l++) {
+    x.fillStyle = rgba(mixc(col, [0, 0, 0], R() * .12), o.a || .055);
+    polyFill(x, deform(base, 3, .55, R));
+    if (l % 6 === 5) { x.globalCompositeOperation = 'destination-out'; for (let k = 0; k < 90; k++) { x.fillStyle = `rgba(0,0,0,${.05 + R() * .1})`; x.beginPath(); x.arc(R() * sz, R() * sz, 2 + R() * sz * .04, 0, TAU); x.fill(); } x.globalCompositeOperation = 'source-over'; }
+  }
+  return c;
+}
+function sprite(sp, x, y, w, h, a = 1, rot = 0, op = 'multiply') {
+  if (a <= 0 || w <= 0) return; g.save(); g.globalAlpha = a; g.globalCompositeOperation = op; g.translate(x, y); if (rot) g.rotate(rot);
+  g.drawImage(sp, -w / 2, -h / 2, w, h); g.restore();
+}
+// wobbly ellipse / rounded box outlines as point lists
+function wob(cx, cy, rx, ry, seed, amp = .03, n = 40) {
+  const p = []; for (let i = 0; i < n; i++) { const a = i / n * TAU; const k = 1 + amp * (Math.sin(a * 3 + seed) * .6 + Math.sin(a * 5 + seed * 2) * .4) + jit(i, seed) * amp * .5; p.push([cx + Math.cos(a) * rx * k, cy + Math.sin(a) * ry * k]); } return p;
+}
+function wbox(x, y, w, h, r, seed, amp = 2.5) {
+  const p = [], C = [[x + w - r, y + r, -Math.PI / 2], [x + w - r, y + h - r, 0], [x + r, y + h - r, Math.PI / 2], [x + r, y + r, Math.PI]];
+  for (let k = 0; k < 4; k++) for (let i = 0; i <= 8; i++) { const a = C[k][2] + i / 8 * Math.PI / 2; p.push([C[k][0] + Math.cos(a) * r + jit(k * 9 + i, seed) * amp, C[k][1] + Math.sin(a) * r + jit(k * 9 + i, seed + 5) * amp]); }
+  return p;
+}
+function smooth(c, pts, closed) {
+  const n = pts.length; c.beginPath();
+  if (closed) { const m0 = [(pts[n - 1][0] + pts[0][0]) / 2, (pts[n - 1][1] + pts[0][1]) / 2]; c.moveTo(m0[0], m0[1]); for (let i = 0; i < n; i++) { const a = pts[i], b = pts[(i + 1) % n]; c.quadraticCurveTo(a[0], a[1], (a[0] + b[0]) / 2, (a[1] + b[1]) / 2); } c.closePath(); }
+  else { c.moveTo(pts[0][0], pts[0][1]); for (let i = 1; i < n - 1; i++) c.quadraticCurveTo(pts[i][0], pts[i][1], (pts[i][0] + pts[i + 1][0]) / 2, (pts[i][1] + pts[i + 1][1]) / 2); c.lineTo(pts[n - 1][0], pts[n - 1][1]); }
+}
+// ink: two offset passes, round caps — reads as a brush pen
+function ink(pts, closed, w = 7, col = INK, a = 1) {
+  g.save(); g.lineCap = 'round'; g.lineJoin = 'round';
+  g.strokeStyle = rgba(col, .92 * a); g.lineWidth = w; smooth(g, pts, closed); g.stroke();
+  g.strokeStyle = rgba(col, .35 * a); g.lineWidth = w * .45; g.translate(jit(1, 77) * 5, jit(2, 77) * 5); smooth(g, pts, closed); g.stroke();
+  g.restore();
+}
+// watercolor fill: three jittered passes, pigment pools at the edges
+function wash(pts, col, a = .5, op = 'multiply') {
+  g.save(); g.globalCompositeOperation = op;
+  for (let k = 0; k < 3; k++) { g.fillStyle = rgba(col, a * .45); g.save(); g.translate(jit(k, 31) * 7, jit(k, 32) * 7); smooth(g, pts, true); g.fill(); g.restore(); }
+  g.strokeStyle = rgba(mixc(col, [0, 0, 0], .25), a * .35); g.lineWidth = 5; smooth(g, pts, true); g.stroke();
+  g.restore();
+}
+function line(x1, y1, x2, y2, seed, w = 7, col = INK, a = 1) { const p = []; for (let i = 0; i <= 6; i++) { const k = i / 6; p.push([lerp(x1, x2, k) + jit(i, seed) * 4, lerp(y1, y2, k) + jit(i, seed + 1) * 4]); } ink(p, false, w, col, a); }
+
+// ---------- baked textures ----------
+const PAP = mk(540, 960), GRAIN = mk(256, 256);
+{ const x = PAP.getContext('2d'), R = rng(5); x.fillStyle = rgba(PAPER); x.fillRect(0, 0, 540, 960);
+  for (let i = 0; i < 40; i++) { const px = R() * 540, py = R() * 960, r = 40 + R() * 160, gr = x.createRadialGradient(px, py, 0, px, py, r); const c = R() < .5 ? [210, 190, 160] : [255, 250, 235]; gr.addColorStop(0, rgba(c, .18)); gr.addColorStop(1, rgba(c, 0)); x.fillStyle = gr; x.fillRect(px - r, py - r, r * 2, r * 2); }
+  for (let i = 0; i < 5000; i++) { x.fillStyle = R() < .5 ? `rgba(120,100,70,${R() * .12})` : `rgba(255,255,250,${R() * .2})`; x.fillRect(R() * 540, R() * 960, 1 + R() * 1.5, 1 + R() * 1.5); }
+  x.strokeStyle = 'rgba(140,120,90,.07)'; x.lineWidth = .7; for (let i = 0; i < 260; i++) { const px = R() * 540, py = R() * 960, a = R() * TAU, l = 6 + R() * 20; x.beginPath(); x.moveTo(px, py); x.quadraticCurveTo(px + Math.cos(a + 1) * l, py + Math.sin(a + 1) * l, px + Math.cos(a) * l * 2, py + Math.sin(a) * l * 2); x.stroke(); } }
+{ const x = GRAIN.getContext('2d'), id = x.createImageData(256, 256), R = rng(9); for (let i = 0; i < id.data.length; i += 4) { const v = R() < .5 ? 0 : 255; id.data[i] = id.data[i + 1] = id.data[i + 2] = v; id.data[i + 3] = R() * 30; } x.putImageData(id, 0, 0); }
+let GPAT = null;
+const WS = { // wash sprites
+  red: [makeWash(384, RD, 1), makeWash(384, [190, 20, 50], 2), makeWash(384, [230, 60, 60], 3)],
+  night: makeWash(512, NIGHT, 4, { r: .42, layers: 26, a: .07 }),
+  deep: makeWash(512, [30, 26, 70], 5, { r: .42, layers: 26, a: .08 }),
+  peach: makeWash(384, [240, 180, 140], 6, { r: .4 }),
+  lav: makeWash(384, [170, 160, 220], 7, { r: .4 }),
+  blue: makeWash(384, [60, 120, 200], 8, { r: .42, layers: 26 }),
+  green: [makeWash(256, [90, 160, 90], 10, { sx: 1.3, sy: .8 }), makeWash(256, [120, 170, 80], 11, { sx: .8, sy: 1.2 }), makeWash(256, [80, 150, 110], 12)],
+  cyan: makeWash(256, CY, 13, { r: .38 }),
+  gold: makeWash(256, [235, 190, 90], 14, { r: .4 }),
+  pink: makeWash(256, [230, 120, 160], 15, { r: .4 }),
+  violet: makeWash(256, [140, 100, 200], 16, { r: .4 }),
+};
+
+// ---------- camera ----------
+let CAM = { x: W / 2, y: H / 2, z: 1 };
+function camOn(x, y, z, sx = 0, sy = 0) { CAM = { x, y, z }; g.save(); g.translate(W / 2 + sx, H / 2 + sy); g.scale(z, z); g.translate(-x, -y); }
+function shake(t, at, amt, len = .3) { const p = seg(t, at, at + len); if (p <= 0 || p >= 1) return [0, 0]; const k = amt * (1 - p); return [Math.sin(t * 91) * k, Math.cos(t * 77) * k]; }
+
+// ---------- hand lettering ----------
+function hand(t, txt, x, y, size, col, t0, o = {}) {
+  if (t < t0) return; const out = o.out != null ? 1 - seg(t, o.out - .15, o.out) : 1; if (out <= 0) return;
+  g.save(); g.font = `900 ${size}px ${FONT}`; g.textBaseline = 'middle'; g.textAlign = 'center';
+  const ws = [...txt].map(ch => g.measureText(ch).width), tw = ws.reduce((a, b) => a + b, 0);
+  let cx = x - tw / 2;
+  [...txt].forEach((ch, i) => {
+    const k = seg(t, t0 + i * (o.stagger || .03), t0 + i * (o.stagger || .03) + .22); if (k <= 0) { cx += ws[i]; return; }
+    const s = back(k) * out, px = cx + ws[i] / 2;
+    g.save(); g.translate(px, y + jit(i, 50) * size * .05); g.rotate(jit(i, 51) * .09 + (o.tilt || 0)); g.scale(s, s);
+    g.lineJoin = 'round'; g.lineWidth = size * .2; g.strokeStyle = rgba(o.stroke || INK); g.strokeText(ch, 0, 0);
+    g.fillStyle = rgba(col); g.fillText(ch, 0, 0);
+    g.restore(); cx += ws[i];
+  });
+  g.restore();
+}
+
+// ---------- characters ----------
+// a painted eye: o = {open, col, lx, ly, slit, lid}
+function eye(x, y, r, o, seed = 0) {
+  const open = clamp(o.open);
+  g.save(); g.translate(x, y);
+  if (open < .06) { ink([[-r, 0], [-r * .3, r * .12], [r * .3, r * .12], [r, 0]], false, Math.max(3, r * .09)); g.restore(); return; }
+  const lid = [];
+  for (let i = 0; i <= 16; i++) { const a = i / 16; lid.push([lerp(-r, r, a), -Math.sin(a * Math.PI) * r * .75 * open]); }
+  for (let i = 15; i >= 1; i--) { const a = i / 16; lid.push([lerp(-r, r, a), Math.sin(a * Math.PI) * r * .7 * open]); }
+  g.save(); smooth(g, lid, true); g.fillStyle = '#fbf6ea'; g.fill(); g.clip();
+  const ix = (o.lx || 0) * r * .35, iy = (o.ly || 0) * r * .2, ir = r * .56;
+  const col = o.col, gr = g.createRadialGradient(ix, iy, ir * .15, ix, iy, ir);
+  gr.addColorStop(0, rgba(mixc(col, [255, 255, 240], .55))); gr.addColorStop(.55, rgba(col)); gr.addColorStop(1, rgba(mixc(col, INK, .6)));
+  g.fillStyle = gr; smooth(g, wob(ix, iy, ir, ir, seed + 3, .04, 24), true); g.fill();
+  if (r > 40) { g.strokeStyle = rgba(mixc(col, INK, .5), .45); g.lineWidth = r * .02; for (let i = 0; i < 28; i++) { const a = i / 28 * TAU + hash(i + seed) * .2; g.beginPath(); g.moveTo(ix + Math.cos(a) * ir * .4, iy + Math.sin(a) * ir * .4); g.lineTo(ix + Math.cos(a) * ir * (.75 + hash(i + 9) * .2), iy + Math.sin(a) * ir * (.75 + hash(i + 9) * .2)); g.stroke(); } }
+  g.fillStyle = rgba(INK); const sl = o.slit || 0; g.beginPath(); g.ellipse(ix, iy, ir * lerp(.38, .1, sl), ir * lerp(.38, .62, sl), 0, 0, TAU); g.fill();
+  g.fillStyle = 'rgba(255,255,255,.92)'; smooth(g, wob(ix - ir * .3, iy - ir * .32, ir * .15, ir * .13, seed, .1, 10), true); g.fill();
+  g.fillStyle = rgba(INK, .12); g.fillRect(-r, -r, r * 2, r * .25 * open); // lid shadow
+  g.restore();
+  ink(lid, true, Math.max(3, r * .08));
+  if (o.brow) { g.save(); g.rotate(o.brow * .25); ink([[-r * .9, -r * .95 * open - r * .1], [0, -r * 1.05 * open - r * .25 * (1 - o.brow)], [r * .9, -r * .85 * open]], false, Math.max(3, r * .1)); g.restore(); }
+  g.restore();
+}
 // cut 18: Bip gets more EVIL every ~5 s (Tuacos), with an on-screen meter (film time)
 const EVLV = [.55, 8.35, 10.0, 13.52, 18.34, 23.04, 26.55]; // eye red, cat ride, city, MARS, "I'm taking over", YOU., the giant over New Zealand = MAX
 const EVDRAIN = [34.1, 35.3], EVSPOON = 38.4, EVGRAN = 41.25; // power-down drains it; the spoon and Grandma refill it
