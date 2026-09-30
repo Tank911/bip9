@@ -13,7 +13,11 @@ canvas{display:block;background:#efe6d2;cursor:pointer}
 <body>
 <canvas id="c"></canvas>
 <p id="content">Loading...</p>
+<script src="wait.js"></script>
 <script>
+  console.log("Start");
+  await wait(10000); // Pauses for 1 second
+  console.log("Done");
   async function loadFile() {
     try {
       const response = await fetch('a.js'); // Path to your file
